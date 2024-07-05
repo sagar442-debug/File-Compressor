@@ -5,8 +5,8 @@
 @tailwind utilities;
 
 body {
-  background: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)),
-    url("./RetroBackground.jpg");
+  background: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.4)),
+    url("https://cdn.dribbble.com/users/81337/screenshots/2983043/media/88441ecf1edc5f566336bf9b4d96e051.gif");
   background-repeat: no-repeat;
   background-size: cover;
   background-position: center;

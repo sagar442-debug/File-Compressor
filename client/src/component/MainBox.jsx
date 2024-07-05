@@ -1,20 +1,25 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { FaRegQuestionCircle } from "react-icons/fa";
 import { HiUpload } from "react-icons/hi";
 import { IoMdCloseCircle } from "react-icons/io";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { PDFDocument } from "pdf-lib";
+import useCompressedFile from "../zustand/useCompressedFile";
+import { useNavigate } from "react-router-dom";
 
 const MainBox = () => {
+  const { setCompressedFile, compressedFile, loading, setLoading } =
+    useCompressedFile();
   // State to hold the selected file
   const [file, setFile] = useState(null);
   // State to hold the compressed file
-  const [compressedFile, setCompressedFile] = useState(null);
   // State to hold the type of the file (e.g., image/jpeg, video/mp4)
   const [fileType, setFileType] = useState("");
   // Create an instance of FFmpeg for video compression
   const ffmpeg = new FFmpeg({ log: true });
   // State to hold the user-input compressed size in MB
   const [compressedSize, setCompressedSize] = useState();
+  const navigate = useNavigate();
 
   const handleFileChange = (event) => {
     const selectedFile = event.target.files[0];
@@ -28,13 +33,13 @@ const MainBox = () => {
   const handleCompress = async () => {
     if (!file) return; // If no file is selected, do nothing
 
+    setLoading(true);
     if (fileType.startsWith("image/")) {
       // If the file is an image, compress it
-      let targetQuality = 0.6; // Default quality (e.g., 60%)
+      let targetQuality = 0.7; // Default quality (e.g., 60%)
       if (compressedSize) {
         // Calculate the target file size in bytes from MB
         const targetFileSizeBytes = compressedSize * 1024 * 1024;
-
         // Compress the image to meet the target file size
         const compressedImage = await compressImageToTargetSize(
           file,
@@ -54,18 +59,23 @@ const MainBox = () => {
       // If the file is a PDF, handle PDF compression
       const compressedPDF = await compressPDF(file); // Implement compressPDF function
       setCompressedFile(compressedPDF); // Set the compressed PDF as the state
+    } else {
+      alert("File not recognized");
     }
+    setLoading(false);
+    navigate("/download");
   };
 
   // Function to compress an image to a target file size in bytes
   const compressImageToTargetSize = async (file, targetFileSizeBytes) => {
     let quality = 1.0; // Initial quality
     let lastCompressedSize = Infinity; // Initialize with a large number
+    let compressedImage = null; // Declare outside the loop
 
     while (lastCompressedSize > targetFileSizeBytes && quality >= 0) {
-      const compressedImage = await compressImage(file, quality); // Compress image with current quality
+      compressedImage = await compressImage(file, quality); // Compress image with current quality
       lastCompressedSize = compressedImage.size; // Get size of the compressed image
-      quality -= 0.1; // Decrease quality (adjust as needed)
+      quality -= 0.01; // Decrease quality (adjust as needed)
     }
 
     return compressedImage;
@@ -112,9 +122,53 @@ const MainBox = () => {
 
   // Function to compress a PDF file (placeholder implementation)
   const compressPDF = async (file) => {
-    // Implement your PDF compression logic here
-    console.log("PDF compression logic will be implemented here.");
-    return null; // Placeholder return
+    try {
+      // Load the PDF file
+      const pdfBytes = await file.arrayBuffer();
+      const pdfDoc = await PDFDocument.load(pdfBytes);
+
+      // Get all pages in the PDF document
+      const pages = pdfDoc.getPages();
+
+      // Iterate through each page and compress images (if any)
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
+        const { width, height } = page.getSize();
+        const images = page.getImages();
+
+        // Compress each image in the page
+        for (let j = 0; j < images.length; j++) {
+          const image = images[j];
+          const imageObject = await image.asPNG(); // Convert image to PNG format
+          const compressedImage = await compressImage(imageObject); // Implement compressImage function
+          page.deleteImage(image.name); // Delete original image
+          page.drawImage(compressedImage, {
+            x: image.x,
+            y: image.y,
+            width: image.width,
+            height: image.height,
+          });
+        }
+      }
+
+      // Save the compressed PDF
+      const compressedPdfBytes = await pdfDoc.save();
+
+      // Create a Blob from the compressed PDF bytes
+      const compressedPdfBlob = new Blob([compressedPdfBytes], {
+        type: "application/pdf",
+      });
+
+      return compressedPdfBlob;
+    } catch (error) {
+      console.error("Error compressing PDF:", error);
+      return null;
+    }
+  };
+
+  const onCancel = () => {
+    setLoading(false);
+    setCompressedFile(null);
   };
 
   return (
@@ -145,17 +199,29 @@ const MainBox = () => {
           </p>
         </div>
       </dialog>
-      <div className=" p-10  bg-purple-400 rounded-md bg-clip-padding backdrop-filter backdrop-blur-md bg-opacity-10 border border-gray-100 shadow-md">
+      <div className=" p-10  bg-purple-400 rounded-md bg-clip-padding backdrop-filter backdrop-blur-sm bg-opacity-10 border border-gray-100 shadow-md">
         <div
           className="flex justify-center flex-col items-center space-y-5
         "
         >
           <div className="buttons space-x-4 flex items-center">
-            <button className="btn btn-active btn-primary text-white px-7 hover:bg-blue-900 hover:border-blue-900">
+            <button
+              onClick={handleCompress}
+              className="btn btn-active btn-primary text-white px-7 hover:bg-blue-900 hover:border-blue-900"
+            >
               <HiUpload className="text-xl" />
-              <span>Upload</span>
+              <span>
+                {loading ? (
+                  <span className="loading loading-spinner loading-md"></span>
+                ) : (
+                  "Compress"
+                )}
+              </span>
             </button>
-            <button className="btn btn-active btn-neutral hover:bg-slate-700 x-7 hover:border-slate-700 text-white">
+            <button
+              onClick={oncancel}
+              className="btn btn-active btn-neutral hover:bg-slate-700 x-7 hover:border-slate-700 text-white"
+            >
               <IoMdCloseCircle className="text-xl text-red-700" />
 
               <span>Cancel</span>
@@ -165,7 +231,7 @@ const MainBox = () => {
             <input
               onChange={handleFileChange}
               type="file"
-              className="file-input file-input-bordered file-input-success w-full max-w-xs shadow-lg"
+              className="file-input file-input-bordered file-input-success w-full max-w-xs shadow-lg hover:text-white duration-100"
             />
           </div>
           <div className=" flex items-center">

@@ -3,7 +3,8 @@ import { FaRegQuestionCircle } from "react-icons/fa";
 import { HiUpload } from "react-icons/hi";
 import { IoMdCloseCircle } from "react-icons/io";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { PDFDocument } from "pdf-lib";
+import { fetchFile } from "@ffmpeg/util"; // Updated import for fetchFile
+import { PDFDocument, rgb, degrees } from "pdf-lib";
 import useCompressedFile from "../zustand/useCompressedFile";
 import { useNavigate } from "react-router-dom";
 
@@ -16,7 +17,9 @@ const MainBox = () => {
   // State to hold the type of the file (e.g., image/jpeg, video/mp4)
   const [fileType, setFileType] = useState("");
   // Create an instance of FFmpeg for video compression
-  const ffmpeg = new FFmpeg({ log: true });
+  const ffmpeg = new FFmpeg({
+    log: true,
+  });
   // State to hold the user-input compressed size in MB
   const [compressedSize, setCompressedSize] = useState();
   const navigate = useNavigate();
@@ -53,11 +56,17 @@ const MainBox = () => {
       }
     } else if (fileType.startsWith("video/")) {
       // If the file is a video, compress it
-      const compressedVideo = await compressVideo(file); // Compress the video
+      let targetSizeBytes = 0;
+      if (compressedSize > 0) {
+        targetSizeBytes = compressedSize * 1024 * 1024;
+      } else {
+        targetSizeBytes = 0.7 * file.size;
+      }
+      const compressedVideo = await compressVideo(file, targetSizeBytes);
       setCompressedFile(compressedVideo); // Set the compressed video as the state
     } else if (fileType === "application/pdf") {
       // If the file is a PDF, handle PDF compression
-      const compressedPDF = await compressPDF(file); // Implement compressPDF function
+      const compressedPDF = await compressPDF(file, compressedSize); // Implement compressPDF function
       setCompressedFile(compressedPDF); // Set the compressed PDF as the state
     } else {
       alert("File not recognized");
@@ -102,56 +111,87 @@ const MainBox = () => {
     });
   };
 
-  // Function to compress a video
-  const compressVideo = async (file) => {
-    await ffmpeg.load(); // Load FFmpeg
-    ffmpeg.FS("writeFile", "input.mp4", await fetchFile(file)); // Write the video file to the FFmpeg filesystem
-    // Run FFmpeg to compress the video
-    await ffmpeg.run(
-      "-i",
-      "input.mp4",
-      "-vcodec",
-      "libx264",
-      "-crf",
-      "28",
-      "output.mp4"
-    );
-    const data = ffmpeg.FS("readFile", "output.mp4"); // Read the compressed video file from the FFmpeg filesystem
-    return new Blob([data.buffer], { type: "video/mp4" }); // Convert the compressed video to a Blob
+  const loadFFmpeg = async () => {
+    await ffmpeg.load();
+    console.log("works");
   };
 
-  // Function to compress a PDF file (placeholder implementation)
-  const compressPDF = async (file) => {
+  const compressVideo = async (file, targetFileSizeBytes) => {
+    await loadFFmpeg(); // Ensure FFmpeg is loaded
+
+    // Write the input file into FFmpeg's file system
+    await ffmpeg.writeFile("input.mkv", await fetchFile(file));
+
+    // Calculate the desired bitrate
+    const bitrate = Math.ceil(targetFileSizeBytes / (file.size / 1000)) + "k";
+
+    // Run FFmpeg to compress the video
+    await ffmpeg.exec([
+      "-i",
+      "input.mkv",
+      "-b:v",
+      bitrate, // Set the bitrate
+      "output.mp4",
+    ]);
+
+    // Read the output file from FFmpeg's file system
+    const data = await ffmpeg.readFile("output.mp4");
+    const compressedBlob = new Blob([data.buffer], { type: "video/mp4" });
+
+    // Clean up
+    await ffmpeg.unlink("input.mkv");
+    await ffmpeg.unlink("output.mp4");
+
+    return compressedBlob;
+  };
+
+  const compressPDF = async (file, targetFileSizeMB) => {
     try {
       // Load the PDF file
       const pdfBytes = await file.arrayBuffer();
       const pdfDoc = await PDFDocument.load(pdfBytes);
 
-      // Get all pages in the PDF document
-      const pages = pdfDoc.getPages();
+      // Calculate the current file size
+      const currentFileSizeMB = pdfBytes.byteLength / (1024 * 1024);
 
-      // Iterate through each page and compress images (if any)
+      // Calculate the scaling factor based on the target file size
+      const scale = Math.sqrt(targetFileSizeMB / currentFileSizeMB);
+
+      // Iterate through pages and perform any optimizations
+      const pages = pdfDoc.getPages();
       for (let i = 0; i < pages.length; i++) {
         const page = pages[i];
-        const { width, height } = page.getSize();
-        const images = page.getImages();
 
-        // Compress each image in the page
-        for (let j = 0; j < images.length; j++) {
-          const image = images[j];
-          const imageObject = await image.asPNG(); // Convert image to PNG format
-          const compressedImage = await compressImage(imageObject); // Implement compressImage function
-          page.deleteImage(image.name); // Delete original image
-          page.drawImage(compressedImage, {
-            x: image.x,
-            y: image.y,
-            width: image.width,
-            height: image.height,
+        // Example optimization: Rotating text by 45 degrees and adding watermark
+        const rotationInDegrees = 45;
+        page.drawText("Optimized", {
+          x: 50,
+          y: 50,
+          size: 50,
+          color: rgb(0.95, 0.1, 0.1),
+          opacity: 0.3,
+          rotate: degrees(rotationInDegrees),
+        });
+
+        // Scale the content based on the calculated scale factor
+        const { width, height } = page.getSize();
+        page.setSize(width * scale, height * scale); // Adjust page size
+
+        // Handle annotations (if available)
+        if (page.getAnnotations) {
+          const annotations = page.getAnnotations();
+          annotations.forEach((annotation) => {
+            const annotationRect = annotation.rect;
+            annotationRect.x *= scale;
+            annotationRect.y *= scale;
+            annotationRect.width *= scale;
+            annotationRect.height *= scale;
+            annotation.rect = annotationRect;
           });
         }
       }
 
-      // Save the compressed PDF
+      // Save the optimized PDF
       const compressedPdfBytes = await pdfDoc.save();
 
       // Create a Blob from the compressed PDF bytes
@@ -219,7 +259,7 @@ const MainBox = () => {
               </span>
             </button>
             <button
-              onClick={oncancel}
+              onClick={onCancel}
               className="btn btn-active btn-neutral hover:bg-slate-700 x-7 hover:border-slate-700 text-white"
             >
               <IoMdCloseCircle className="text-xl text-red-700" />

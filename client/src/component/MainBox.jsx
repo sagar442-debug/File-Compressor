@@ -7,20 +7,21 @@ import { fetchFile } from "@ffmpeg/util"; // Updated import for fetchFile
 import { PDFDocument, rgb, degrees } from "pdf-lib";
 import useCompressedFile from "../zustand/useCompressedFile";
 import { useNavigate } from "react-router-dom";
+import { compressImage } from "../utils/compressImage";
+import { compressPDF } from "../utils/compressPdf";
+import { compressVideo } from "../utils/compressVideo";
 
 const MainBox = () => {
   const { setCompressedFile, compressedFile, loading, setLoading } =
     useCompressedFile();
-  // State to hold the selected file
   const [file, setFile] = useState(null);
-  // State to hold the compressed file
-  // State to hold the type of the file (e.g., image/jpeg, video/mp4)
   const [fileType, setFileType] = useState("");
-  // Create an instance of FFmpeg for video compression
   const ffmpeg = new FFmpeg({
     log: true,
   });
+
   // State to hold the user-input compressed size in MB
+
   const [compressedSize, setCompressedSize] = useState();
   const navigate = useNavigate();
 
@@ -88,122 +89,6 @@ const MainBox = () => {
     }
 
     return compressedImage;
-  };
-
-  // Function to compress an image with a specified quality
-  const compressImage = (file, quality) => {
-    return new Promise((resolve) => {
-      const reader = new FileReader(); // Create a FileReader to read the file
-      reader.readAsDataURL(file); // Read the file as a Data URL
-      reader.onload = (event) => {
-        const img = new Image(); // Create an Image object
-        img.src = event.target.result; // Set the image source to the Data URL
-        img.onload = () => {
-          const canvas = document.createElement("canvas"); // Create a canvas element
-          const ctx = canvas.getContext("2d"); // Get the 2D context of the canvas
-          canvas.width = img.width; // Set the canvas width to the image width
-          canvas.height = img.height; // Set the canvas height to the image height
-          ctx.drawImage(img, 0, 0); // Draw the image on the canvas
-          // Convert the canvas to a Blob (compressed image) and resolve the promise
-          canvas.toBlob((blob) => resolve(blob), "image/jpeg", quality);
-        };
-      };
-    });
-  };
-
-  const loadFFmpeg = async () => {
-    await ffmpeg.load();
-    console.log("works");
-  };
-
-  const compressVideo = async (file, targetFileSizeBytes) => {
-    await loadFFmpeg(); // Ensure FFmpeg is loaded
-
-    // Write the input file into FFmpeg's file system
-    await ffmpeg.writeFile("input.mkv", await fetchFile(file));
-
-    // Calculate the desired bitrate
-    const bitrate = Math.ceil(targetFileSizeBytes / (file.size / 1000)) + "k";
-
-    // Run FFmpeg to compress the video
-    await ffmpeg.exec([
-      "-i",
-      "input.mkv",
-      "-b:v",
-      bitrate, // Set the bitrate
-      "output.mp4",
-    ]);
-
-    // Read the output file from FFmpeg's file system
-    const data = await ffmpeg.readFile("output.mp4");
-    const compressedBlob = new Blob([data.buffer], { type: "video/mp4" });
-
-    // Clean up
-    await ffmpeg.unlink("input.mkv");
-    await ffmpeg.unlink("output.mp4");
-
-    return compressedBlob;
-  };
-
-  const compressPDF = async (file, targetFileSizeMB) => {
-    try {
-      // Load the PDF file
-      const pdfBytes = await file.arrayBuffer();
-      const pdfDoc = await PDFDocument.load(pdfBytes);
-
-      // Calculate the current file size
-      const currentFileSizeMB = pdfBytes.byteLength / (1024 * 1024);
-
-      // Calculate the scaling factor based on the target file size
-      const scale = Math.sqrt(targetFileSizeMB / currentFileSizeMB);
-
-      // Iterate through pages and perform any optimizations
-      const pages = pdfDoc.getPages();
-      for (let i = 0; i < pages.length; i++) {
-        const page = pages[i];
-
-        // Example optimization: Rotating text by 45 degrees and adding watermark
-        const rotationInDegrees = 45;
-        page.drawText("Optimized", {
-          x: 50,
-          y: 50,
-          size: 50,
-          color: rgb(0.95, 0.1, 0.1),
-          opacity: 0.3,
-          rotate: degrees(rotationInDegrees),
-        });
-
-        // Scale the content based on the calculated scale factor
-        const { width, height } = page.getSize();
-        page.setSize(width * scale, height * scale); // Adjust page size
-
-        // Handle annotations (if available)
-        if (page.getAnnotations) {
-          const annotations = page.getAnnotations();
-          annotations.forEach((annotation) => {
-            const annotationRect = annotation.rect;
-            annotationRect.x *= scale;
-            annotationRect.y *= scale;
-            annotationRect.width *= scale;
-            annotationRect.height *= scale;
-            annotation.rect = annotationRect;
-          });
-        }
-      }
-
-      // Save the optimized PDF
-      const compressedPdfBytes = await pdfDoc.save();
-
-      // Create a Blob from the compressed PDF bytes
-      const compressedPdfBlob = new Blob([compressedPdfBytes], {
-        type: "application/pdf",
-      });
-
-      return compressedPdfBlob;
-    } catch (error) {
-      console.error("Error compressing PDF:", error);
-      return null;
-    }
   };
 
   const onCancel = () => {

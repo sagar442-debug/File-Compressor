@@ -24,6 +24,10 @@ export const useVideoCompressor = () => {
           `${baseURL}/ffmpeg-core.wasm`,
           "application/wasm"
         ),
+        workerURL: await toBlobURL(
+          `${baseURL}/ffmpeg-core.worker.js`,
+          "text/javascript"
+        ),
       });
 
       console.log("FFmpeg loaded successfully.");

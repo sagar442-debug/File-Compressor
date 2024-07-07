@@ -2,23 +2,20 @@ import React, { useEffect, useState } from "react";
 import { FaRegQuestionCircle } from "react-icons/fa";
 import { HiUpload } from "react-icons/hi";
 import { IoMdCloseCircle } from "react-icons/io";
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile } from "@ffmpeg/util"; // Updated import for fetchFile
+
 import { PDFDocument, rgb, degrees } from "pdf-lib";
 import useCompressedFile from "../zustand/useCompressedFile";
 import { useNavigate } from "react-router-dom";
 import { compressImage } from "../utils/compressImage";
 import { compressPDF } from "../utils/compressPdf";
-import { compressVideo } from "../utils/compressVideo";
+import { useVideoCompressor } from "../utils/useCompressVideo";
 
 const MainBox = () => {
   const { setCompressedFile, compressedFile, loading, setLoading } =
     useCompressedFile();
   const [file, setFile] = useState(null);
   const [fileType, setFileType] = useState("");
-  const ffmpeg = new FFmpeg({
-    log: true,
-  });
+  const { compressVideo } = useVideoCompressor();
 
   // State to hold the user-input compressed size in MB
 
@@ -38,8 +35,10 @@ const MainBox = () => {
     if (!file) return; // If no file is selected, do nothing
 
     setLoading(true);
+
     if (fileType.startsWith("image/")) {
       // If the file is an image, compress it
+
       let targetQuality = 0.7; // Default quality (e.g., 60%)
       if (compressedSize) {
         // Calculate the target file size in bytes from MB
@@ -57,14 +56,19 @@ const MainBox = () => {
       }
     } else if (fileType.startsWith("video/")) {
       // If the file is a video, compress it
+
       let targetSizeBytes = 0;
       if (compressedSize > 0) {
+        // converting to bytes
+
         targetSizeBytes = compressedSize * 1024 * 1024;
       } else {
         targetSizeBytes = 0.7 * file.size;
       }
       const compressedVideo = await compressVideo(file, targetSizeBytes);
-      setCompressedFile(compressedVideo); // Set the compressed video as the state
+      setCompressedFile(compressedVideo);
+
+      // Set the compressed video as the state
     } else if (fileType === "application/pdf") {
       // If the file is a PDF, handle PDF compression
       const compressedPDF = await compressPDF(file, compressedSize); // Implement compressPDF function
@@ -77,6 +81,7 @@ const MainBox = () => {
   };
 
   // Function to compress an image to a target file size in bytes
+
   const compressImageToTargetSize = async (file, targetFileSizeBytes) => {
     let quality = 1.0; // Initial quality
     let lastCompressedSize = Infinity; // Initialize with a large number

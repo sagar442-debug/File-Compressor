@@ -56,17 +56,20 @@ const MainBox = () => {
       }
     } else if (fileType.startsWith("video/")) {
       // If the file is a video, compress it
+      alert(
+        "As of current time I have disabled compression of video and am working on fixing a bug for video compression. Please behold this service will be soon opened."
+      );
 
-      let targetSizeBytes = 0;
-      if (compressedSize > 0) {
-        // converting to bytes
+      // let targetSizeBytes = 0;
+      // if (compressedSize > 0) {
+      //   // converting to bytes
 
-        targetSizeBytes = compressedSize * 1024 * 1024;
-      } else {
-        targetSizeBytes = 0.7 * file.size;
-      }
-      const compressedVideo = await compressVideo(file, targetSizeBytes);
-      setCompressedFile(compressedVideo);
+      //   targetSizeBytes = compressedSize * 1024 * 1024;
+      // } else {
+      //   targetSizeBytes = 0.7 * file.size;
+      // }
+      // const compressedVideo = await compressVideo(file, targetSizeBytes);
+      // setCompressedFile(compressedVideo);
 
       // Set the compressed video as the state
     } else if (fileType === "application/pdf") {
